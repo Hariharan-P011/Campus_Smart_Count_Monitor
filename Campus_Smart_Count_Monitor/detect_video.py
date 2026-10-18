@@ -4,7 +4,7 @@ from pathlib import Path
 
 model = YOLO("yolo11n.pt")
 
-video_path = Path("videos/sample.mp4")
+video_path = Path("videos/Video Project 1.mp4")
 output_dir = Path("output")
 output_dir.mkdir(parents=True, exist_ok=True)
 
