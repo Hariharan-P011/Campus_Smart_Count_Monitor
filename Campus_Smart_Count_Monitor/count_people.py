@@ -9,13 +9,17 @@ VIDEO_PATH = "videos/Video Project 1.mp4"
 MODEL_PATH = "yolo11n.pt"
 OUTPUT_PATH = "output/in_out_count.mp4"
 
-# Diagonal line estimated from your screenshot
-LINE_START = (0.21, 0.26)
-LINE_END = (0.50, 0.085)
+# Approximate positions of the two red lines in your screenshot.
+# Coordinates are normalized: (x, y), each from 0.0 to 1.0.
+LINE_A_START = (0.21, 0.23)
+LINE_A_END = (0.48, 0.075)
 
-CONFIDENCE = 0.20
+LINE_B_START = (0.19, 0.25)
+LINE_B_END = (0.475, 0.105)
+
+CONFIDENCE = 0.15
 IMAGE_SIZE = 640
-LINE_OFFSET = 10
+LINE_OFFSET = 8
 
 # ------------------------------------------------
 
@@ -31,11 +35,14 @@ fps = cap.get(cv2.CAP_PROP_FPS)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-# Convert normalized coordinates to actual video coordinates
-line_x1 = int(width * LINE_START[0])
-line_y1 = int(height * LINE_START[1])
-line_x2 = int(width * LINE_END[0])
-line_y2 = int(height * LINE_END[1])
+def convert_line(start, end):
+    return (
+        (int(start[0] * width), int(start[1] * height)),
+        (int(end[0] * width), int(end[1] * height))
+    )
+
+line_a = convert_line(LINE_A_START, LINE_A_END)
+line_b = convert_line(LINE_B_START, LINE_B_END)
 
 writer = cv2.VideoWriter(
     OUTPUT_PATH,
@@ -51,17 +58,37 @@ if not writer.isOpened():
 in_count = 0
 out_count = 0
 
-# Last stable side recorded for each track ID
-last_side = {}
+# Previous stable side of each line for every track ID
+previous_sides = {}
 
-# Avoid repeated counts for the same ID and crossing
-last_counted_side = {}
+# Crossing sequence for each track ID
+zone_state = {}
+
+# Count each track ID at most once
+counted_ids = set()
+
+def line_side(point, line):
+    (x1, y1), (x2, y2) = line
+    px, py = point
+
+    value = (
+        (x2 - x1) * (py - y1)
+        - (y2 - y1) * (px - x1)
+    )
+
+    length = max(
+        1.0,
+        ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    )
+
+    if abs(value) <= LINE_OFFSET * length:
+        return 0
+
+    return 1 if value > 0 else -1
 
 frame_number = 0
 
 print("Processing video...")
-print(f"Counting line: ({line_x1}, {line_y1}) to "
-      f"({line_x2}, {line_y2})")
 
 while True:
     success, frame = cap.read()
@@ -80,13 +107,17 @@ while True:
         verbose=False
     )[0]
 
-    # Draw the diagonal counting line
-    cv2.line(
-        frame,
-        (line_x1, line_y1),
-        (line_x2, line_y2),
-        (0, 255, 255),
-        3
+    # Draw the two independent counting lines
+    cv2.line(frame, line_a[0], line_a[1], (0, 255, 255), 3)
+    cv2.line(frame, line_b[0], line_b[1], (255, 0, 255), 3)
+
+    cv2.putText(
+        frame, "A", line_a[0],
+        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2
+    )
+    cv2.putText(
+        frame, "B", line_b[0],
+        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2
     )
 
     if result.boxes is not None and result.boxes.id is not None:
@@ -96,87 +127,100 @@ while True:
         for box, track_id in zip(boxes, track_ids):
             bx1, by1, bx2, by2 = map(int, box)
 
-            # Bottom-center is a better crossing reference
-            # than the center of the person's bounding box.
-            center_x = (bx1 + bx2) // 2
-            center_y = by2
+            # Bottom-center of the person box
+            point = ((bx1 + bx2) // 2, by2)
 
-            # Signed position relative to the diagonal line
-            cross_value = (
-                (line_x2 - line_x1) * (center_y - line_y1)
-                - (line_y2 - line_y1) * (center_x - line_x1)
-            )
+            side_a = line_side(point, line_a)
+            side_b = line_side(point, line_b)
 
-            # Ignore points too close to the line
-            if abs(cross_value) > LINE_OFFSET * max(
-                1, ((line_x2 - line_x1) ** 2
-                    + (line_y2 - line_y1) ** 2) ** 0.5
-            ):
-                side = 1 if cross_value > 0 else -1
+            if track_id not in previous_sides:
+                previous_sides[track_id] = {
+                    "A": side_a,
+                    "B": side_b
+                }
+                zone_state[track_id] = None
 
-                previous_side = last_side.get(track_id)
+            else:
+                old_a = previous_sides[track_id]["A"]
+                old_b = previous_sides[track_id]["B"]
 
-                if (
-                    previous_side is not None
-                    and side != previous_side
-                    and last_counted_side.get(track_id) != side
-                ):
-                    # Direction labels are provisional.
-                    # Reverse IN and OUT if your entrance orientation differs.
-                    if previous_side == -1 and side == 1:
-                        in_count += 1
-                        last_counted_side[track_id] = side
+                crossed_a = (
+                    side_a != 0 and old_a != 0 and side_a != old_a
+                )
+                crossed_b = (
+                    side_b != 0 and old_b != 0 and side_b != old_b
+                )
 
-                    elif previous_side == 1 and side == -1:
-                        out_count += 1
-                        last_counted_side[track_id] = side
+                state = zone_state.get(track_id)
 
-                last_side[track_id] = side
+                if track_id not in counted_ids:
 
-            # Draw person detection and tracking ID
+                    # Both lines crossed between consecutive observations.
+                    # Infer the direction using the prior and current sides.
+                    if crossed_a and crossed_b:
+                        if old_a == -1 and side_a == 1:
+                            in_count += 1
+                            counted_ids.add(track_id)
+                            zone_state[track_id] = "COUNTED_IN"
+
+                        elif old_a == 1 and side_a == -1:
+                            out_count += 1
+                            counted_ids.add(track_id)
+                            zone_state[track_id] = "COUNTED_OUT"
+
+                    elif crossed_a:
+                        if state is None:
+                            zone_state[track_id] = "A_FIRST"
+
+                        elif state == "B_FIRST":
+                            out_count += 1
+                            counted_ids.add(track_id)
+                            zone_state[track_id] = "COUNTED_OUT"
+
+                    elif crossed_b:
+                        if state is None:
+                            zone_state[track_id] = "B_FIRST"
+
+                        elif state == "A_FIRST":
+                            in_count += 1
+                            counted_ids.add(track_id)
+                            zone_state[track_id] = "COUNTED_IN"
+
+                # Update stable sides after processing the crossing.
+                if side_a != 0:
+                    previous_sides[track_id]["A"] = side_a
+
+                if side_b != 0:
+                    previous_sides[track_id]["B"] = side_b
+
             cv2.rectangle(
-                frame,
-                (bx1, by1),
-                (bx2, by2),
-                (0, 255, 0),
-                2
+                frame, (bx1, by1), (bx2, by2), (0, 255, 0), 2
             )
 
             cv2.circle(
-                frame,
-                (center_x, center_y),
-                4,
-                (255, 0, 255),
-                -1
+                frame, point, 4, (255, 255, 0), -1
             )
 
             cv2.putText(
-                frame,
-                f"ID: {track_id}",
+                frame, f"ID: {track_id}",
                 (bx1, max(20, by1 - 8)),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 255, 0),
-                2
+                0.6, (0, 255, 0), 2
             )
 
-    # Display counts
     cv2.putText(
         frame, f"IN: {in_count}", (20, 40),
-        cv2.FONT_HERSHEY_SIMPLEX, 1,
-        (0, 255, 0), 2
+        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2
     )
 
     cv2.putText(
         frame, f"OUT: {out_count}", (20, 80),
-        cv2.FONT_HERSHEY_SIMPLEX, 1,
-        (0, 0, 255), 2
+        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2
     )
 
     cv2.putText(
         frame, f"NET: {in_count - out_count}", (20, 120),
-        cv2.FONT_HERSHEY_SIMPLEX, 1,
-        (255, 255, 0), 2
+        cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2
     )
 
     writer.write(frame)
@@ -189,5 +233,5 @@ print("\nProcessing completed.")
 print(f"Frames processed: {frame_number}")
 print(f"IN: {in_count}")
 print(f"OUT: {out_count}")
-print(f"Net count: {in_count - out_count}")
+print(f"Net: {in_count - out_count}")
 print(f"Output video: {OUTPUT_PATH}")

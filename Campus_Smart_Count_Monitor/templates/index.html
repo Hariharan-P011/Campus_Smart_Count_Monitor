@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campus Smart Count Monitor | Live Dashboard</title>
+  <!-- Google Fonts Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap"
+    rel="stylesheet">
+  <!-- Chart.js for real-time occupancy curves -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-main: #f0f7ff;
+      --bg-card: #ffffff;
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --primary-light: #e0f2fe;
+      --royal-blue: #1d4ed8;
+      --royal-gradient: linear-gradient(135deg, #1e40af 0%, #2563eb 50%, #0284c7 100%);
+      --in-color: #0284c7;
+      --in-bg: #e0f2fe;
+      --out-color: #475569;
+      --out-bg: #f1f5f9;
+      --success: #10b981;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --border-blue: #bfdbfe;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 20px -2px rgba(2, 132, 199, 0.08), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+      --shadow-lg: 0 12px 32px -4px rgba(37, 99, 235, 0.15), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: var(--bg-main);
+      background-image: radial-gradient(#dbeafe 1px, transparent 1px), radial-gradient(#e0f2fe 1px, #f0f7ff 1px);
+      background-size: 40px 40px;
+      background-position: 0 0, 20px 20px;
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Navigation */
+    header {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-blue);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 4px 15px -3px rgba(2, 132, 199, 0.05);
+    }
+
+    .nav-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--royal-gradient);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-size: 22px;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    .brand-text h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-text p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      background: #eff6ff;
+      color: var(--royal-blue);
+      border: 1px solid var(--border-blue);
+    }
+
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: #2563eb;
+      box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+      animation: pulse-blue 1.8s infinite;
+    }
+
+    .status-dot.paused {
+      background: #f59e0b;
+      box-shadow: none;
+      animation: none;
+    }
+
+    .status-dot.completed {
+      background: #10b981;
+      box-shadow: none;
+      animation: none;
+    }
+
+    @keyframes pulse-blue {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+      }
+
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 8px rgba(37, 99, 235, 0);
+      }
+
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+      }
+    }
+
+    /* Main Container */
+    main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Metric Cards Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+
+    @media (max-width: 1024px) {
+      .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .metrics-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--radius);
+      padding: 22px;
+      border: 1px solid var(--border-blue);
+      box-shadow: var(--shadow-md);
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card:hover {
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-2px);
+      border-color: #93c5fd;
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .card-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+    }
+
+    .card-icon.in {
+      background: #e0f2fe;
+      color: #0284c7;
+    }
+
+    .card-icon.out {
+      background: #f1f5f9;
+      color: #475569;
+    }
+
+    .card-icon.active {
+      background: #ecfeff;
+      color: #0891b2;
+    }
+
+    .card-value {
+      font-size: 3.2rem;
+      font-weight: 800;
+      line-height: 1;
+      font-family: 'JetBrains Mono', monospace;
+      color: #0f172a;
+      letter-spacing: -0.03em;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.2s ease;
+    }
+
+    .card-value.bump {
+      transform: scale(1.15);
+      color: #2563eb;
+    }
+
+    .card-footer {
+      margin-top: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    /* Highlight Net Occupancy Card */
+    .card.hero-net {
+      background: var(--royal-gradient);
+      color: #ffffff;
+      border: none;
+      box-shadow: 0 14px 30px -4px rgba(37, 99, 235, 0.35);
+    }
+
+    .card.hero-net .card-title {
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .card.hero-net .card-icon {
+      background: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+    }
+
+    .card.hero-net .card-value {
+      color: #ffffff;
+    }
+
+    .card.hero-net .card-value.bump {
+      color: #ffffff;
+      transform: scale(1.18);
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+    }
+
+    .card.hero-net .card-footer {
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .badge-white {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+    }
+
+    /* Content Layout (Stream + Sidebar) */
+    .dashboard-content {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 1080px) {
+      .dashboard-content {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Video Player Card */
+    .video-card {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .video-header {
+      padding: 16px 20px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .video-header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .video-title {
+      font-weight: 700;
+      font-size: 0.98rem;
+      color: #0f172a;
+    }
+
+    .stream-tag {
+      background: #eff6ff;
+      color: #2563eb;
+      font-weight: 700;
+      font-size: 0.72rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      border: 1px solid #bfdbfe;
+    }
+
+    .video-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      color: #1e293b;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
+
+    .btn-primary {
+      background: #0284c7;
+      color: #ffffff;
+      border-color: #0284c7;
+    }
+
+    .btn-primary:hover {
+      background: #0369a1;
+      border-color: #0369a1;
+    }
+
+    .video-viewport {
+      position: relative;
+      background: #090d16;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 480px;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .video-viewport img {
+      width: 100%;
+      height: auto;
+      max-height: 600px;
+      object-fit: contain;
+      display: block;
+    }
+
+    .video-overlay-badge {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: #ffffff;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .video-overlay-stats {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 6px 12px;
+      color: #38bdf8;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* Video Progress Bar */
+    .video-progress-container {
+      padding: 12px 20px;
+      background: #ffffff;
+      border-top: 1px solid var(--border);
+    }
+
+    .progress-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 9999px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #0284c7, #2563eb);
+      border-radius: 9999px;
+      transition: width 0.2s ease;
+    }
+
+    /* Sidebar Panels */
+    .sidebar-col {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Real-Time Event Feed */
+    .events-card {
+      display: flex;
+      flex-direction: column;
+      height: 380px;
+    }
+
+    .events-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .events-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+
+    /* Custom Scrollbar */
+    .events-list::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .events-list::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 4px;
+    }
+
+    .events-list::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+
+    .event-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+      animation: slide-in 0.3s ease-out;
+    }
+
+    @keyframes slide-in {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .event-item.in {
+      border-left: 4px solid #0284c7;
+      background: #f0f9ff;
+    }
+
+    .event-item.out {
+      border-left: 4px solid #64748b;
+      background: #f8fafc;
+    }
+
+    .event-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .event-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+    }
+
+    .event-badge.in {
+      background: #0284c7;
+      color: #ffffff;
+    }
+
+    .event-badge.out {
+      background: #475569;
+      color: #ffffff;
+    }
+
+    .event-details {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    .event-time {
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+    }
+
+    .empty-events {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      text-align: center;
+      gap: 8px;
+    }
+
+    /* Live Occupancy Chart */
+    .chart-card {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 220px;
+      width: 100%;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: auto;
+      background: #ffffff;
+      border-top: 1px solid var(--border-blue);
+      padding: 16px 24px;
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Top Header Navigation -->
+  <header>
+    <div class="nav-container">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+            stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <polyline points="16 11 18 13 22 9"></polyline>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Campus Smart Count Monitor</h1>
+          <p>Real-Time In/Out Vision Intelligence Engine</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div class="status-badge" id="system-status-badge">
+          <span class="status-dot" id="system-status-dot"></span>
+          <span id="system-status-text">INITIALIZING...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Content -->
+  <main>
+    <!-- Key Metric Counters in White and Blue -->
+    <section class="metrics-grid">
+      <!-- IN COUNT -->
+      <div class="card" id="card-in">
+        <div class="card-top">
+          <span class="card-title">People Entered (IN)</span>
+          <div class="card-icon in">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <polyline points="19 12 12 19 5 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="val-in">0</div>
+        <div class="card-footer">
+          <span>Inbound Crossing Gate</span>
+          <span style="color: #0284c7; font-weight: 700;">+ Entry</span>
+        </div>
+      </div>
+
+      <!-- OUT COUNT -->
+      <div class="card" id="card-out">
+        <div class="card-top">
+          <span class="card-title">People Exited (OUT)</span>
+          <div class="card-icon out">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5"></line>
+              <polyline points="5 12 12 5 19 12"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="val-out">0</div>
+        <div class="card-footer">
+          <span>Outbound Crossing Gate</span>
+          <span style="color: #64748b; font-weight: 700;">- Exit</span>
+        </div>
+      </div>
+
+      <!-- NET COUNT (HERO ROYAL BLUE) -->
+      <div class="card hero-net" id="card-net">
+        <div class="card-top">
+          <span class="card-title">Net Occupancy</span>
+          <div class="card-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="val-net">0</div>
+        <div class="card-footer">
+          <span>Current Presence (IN - OUT)</span>
+          <span class="badge-white">ACTIVE NET</span>
+        </div>
+      </div>
+
+      <!-- LIVE TRACKED & ENGINE FPS -->
+      <div class="card" id="card-active">
+        <div class="card-top">
+          <span class="card-title">Active In Frame</span>
+          <div class="card-icon active">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </div>
+        </div>
+        <div class="card-value" id="val-active">0</div>
+        <div class="card-footer">
+          <span id="fps-label">Speed: 0.0 FPS</span>
+          <span style="color: #0891b2; font-weight: 700;">ByteTrack</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Viewport Section -->
+    <section class="dashboard-content">
+      <!-- Live Video Monitor -->
+      <div class="card video-card">
+        <div class="video-header">
+          <div class="video-header-left">
+            <span class="video-title">Live Video Processing Stream</span>
+            <span class="stream-tag">YOLO11 Nano + BotSORT</span>
+          </div>
+          <div class="video-controls">
+            <button class="btn" id="btn-pause" onclick="togglePause()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="6" y="4" width="4" height="16"></rect>
+                <rect x="14" y="4" width="4" height="16"></rect>
+              </svg>
+              <span id="pause-text">Pause</span>
+            </button>
+            <button class="btn btn-primary" id="btn-restart" onclick="restartProcessing()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+              </svg>
+              Restart
+            </button>
+          </div>
+        </div>
+
+        <div class="video-viewport">
+          <img id="stream-img" src="/video_feed" alt="Live YOLO Processing Stream" />
+          <div class="video-overlay-badge">
+            <span
+              style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444; animation: pulse-blue 1.5s infinite;"></span>
+            <span>LIVE INFERENCE</span>
+          </div>
+          <div class="video-overlay-stats" id="overlay-stats">
+            FRAME: 0 | FPS: 0.0
+          </div>
+        </div>
+
+        <div class="video-progress-container">
+          <div class="progress-labels">
+            <span>Video Processing Progress</span>
+            <span id="progress-text">0% (0 / 0 frames)</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Real-Time Crossing Feed & Occupancy Chart -->
+      <div class="sidebar-col">
+        <!-- Live Crossing Activity Feed -->
+        <div class="card events-card">
+          <div class="events-header">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">Real-Time Activity Feed</h3>
+            <span style="font-size: 0.75rem; color: #64748b; font-weight: 600;" id="event-count-badge">0 events</span>
+          </div>
+          <div class="events-list" id="events-list">
+            <div class="empty-events" id="empty-events-msg">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+              <span>Waiting for crossing events...<br>Detections will appear lively here.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Occupancy Trend Chart -->
+        <div class="card chart-card">
+          <div class="events-header">
+            <h3 style="font-size: 0.95rem; font-weight: 700; color: #0f172a;">Occupancy Curve (Live)</h3>
+            <span style="font-size: 0.72rem; color: #0284c7; font-weight: 700;">IN vs OUT</span>
+          </div>
+          <div class="chart-wrapper">
+            <canvas id="occupancyChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    Campus Smart Count Monitor &copy; 2026 &bull; Real-Time AI Computer Vision Dashboard &bull; Powered by Ultralytics
+    YOLO11
+  </footer>
+
+  <script>
+    // State references
+    let currentIn = 0;
+    let currentOut = 0;
+    let currentNet = 0;
+    let isPaused = false;
+    const knownEventIds = new Set();
+
+    // DOM Elements
+    const valIn = document.getElementById('val-in');
+    const valOut = document.getElementById('val-out');
+    const valNet = document.getElementById('val-net');
+    const valActive = document.getElementById('val-active');
+    const fpsLabel = document.getElementById('fps-label');
+    const overlayStats = document.getElementById('overlay-stats');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    const eventsList = document.getElementById('events-list');
+    const emptyEventsMsg = document.getElementById('empty-events-msg');
+    const eventCountBadge = document.getElementById('event-count-badge');
+    const systemStatusBadge = document.getElementById('system-status-badge');
+    const systemStatusDot = document.getElementById('system-status-dot');
+    const systemStatusText = document.getElementById('system-status-text');
+    const pauseText = document.getElementById('pause-text');
+
+    // Chart.js Setup
+    const ctx = document.getElementById('occupancyChart').getContext('2d');
+    const occupancyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'IN Count',
+            data: [],
+            borderColor: '#0284c7',
+            backgroundColor: 'rgba(2, 132, 199, 0.08)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 2
+          },
+          {
+            label: 'OUT Count',
+            data: [],
+            borderColor: '#64748b',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.3,
+            pointRadius: 2
+          },
+          {
+            label: 'Net Count',
+            data: [],
+            borderColor: '#2563eb',
+            backgroundColor: 'transparent',
+            borderWidth: 2.5,
+            borderDash: [4, 4],
+            tension: 0.3,
+            pointRadius: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: {
+              boxWidth: 12,
+              font: { family: 'Plus Jakarta Sans', size: 10, weight: 600 }
+            }
+          }
+        },
+        scales: {
+          x: {
+            display: false
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+              font: { family: 'JetBrains Mono', size: 10 }
+            },
+            grid: {
+              color: '#f1f5f9'
+            }
+          }
+        }
+      }
+    });
+
+    // Animate counter bump when number increases
+    function updateCounter(element, newValue, prevValue) {
+      if (newValue !== prevValue) {
+        element.textContent = newValue;
+        element.classList.add('bump');
+        setTimeout(() => element.classList.remove('bump'), 300);
+      }
+    }
+
+    // Add event row to activity log
+    function addEventRow(ev) {
+      if (knownEventIds.has(ev.id)) return;
+      knownEventIds.add(ev.id);
+
+      if (emptyEventsMsg) {
+        emptyEventsMsg.style.display = 'none';
+      }
+
+      const item = document.createElement('div');
+      item.className = `event-item ${ev.direction.toLowerCase()}`;
+      item.innerHTML = `
+        <div class="event-left">
+          <span class="event-badge ${ev.direction.toLowerCase()}">${ev.direction}</span>
+          <div class="event-details">Person ID #${ev.track_id} crossed ${ev.direction}</div>
+        </div>
+        <div class="event-time">${ev.time}</div>
+      `;
+
+      eventsList.insertBefore(item, eventsList.firstChild);
+      eventCountBadge.textContent = `${knownEventIds.size} events`;
+    }
+
+    // Process incoming state updates
+    function handleStateUpdate(data) {
+      // IN Count lively update
+      updateCounter(valIn, data.in_count, currentIn);
+      currentIn = data.in_count;
+
+      // OUT Count lively update
+      updateCounter(valOut, data.out_count, currentOut);
+      currentOut = data.out_count;
+
+      // NET Count lively update
+      updateCounter(valNet, data.net_count, currentNet);
+      currentNet = data.net_count;
+
+      // Active tracked persons & FPS
+      valActive.textContent = data.active_tracks || 0;
+      fpsLabel.textContent = `Speed: ${data.fps} FPS`;
+      overlayStats.textContent = `FRAME: ${data.current_frame} / ${data.total_frames} | FPS: ${data.fps}`;
+
+      // Progress bar
+      const pct = data.progress || 0;
+      progressFill.style.width = `${pct}%`;
+      progressText.textContent = `${pct}% (${data.current_frame} / ${data.total_frames} frames)`;
+
+      // System Status Indicator
+      if (data.is_completed) {
+        systemStatusDot.className = 'status-dot completed';
+        systemStatusText.textContent = 'VIDEO COMPLETED';
+      } else if (data.is_paused) {
+        systemStatusDot.className = 'status-dot paused';
+        systemStatusText.textContent = 'PAUSED';
+        pauseText.textContent = 'Resume';
+      } else if (data.is_running) {
+        systemStatusDot.className = 'status-dot';
+        systemStatusText.textContent = 'LIVE PROCESSING';
+        pauseText.textContent = 'Pause';
+      } else {
+        systemStatusDot.className = 'status-dot paused';
+        systemStatusText.textContent = 'IDLE';
+      }
+
+      // Add recent events
+      if (data.events && Array.isArray(data.events)) {
+        // Reverse so chronological order is maintained
+        for (let i = data.events.length - 1; i >= 0; i--) {
+          addEventRow(data.events[i]);
+        }
+      }
+
+      // Update Chart (push every 5 frames)
+      if (data.current_frame % 5 === 0 && data.total_frames > 0) {
+        const timeLabel = new Date().toLocaleTimeString();
+        if (occupancyChart.data.labels.length > 25) {
+          occupancyChart.data.labels.shift();
+          occupancyChart.data.datasets[0].data.shift();
+          occupancyChart.data.datasets[1].data.shift();
+          occupancyChart.data.datasets[2].data.shift();
+        }
+        occupancyChart.data.labels.push(timeLabel);
+        occupancyChart.data.datasets[0].data.push(data.in_count);
+        occupancyChart.data.datasets[1].data.push(data.out_count);
+        occupancyChart.data.datasets[2].data.push(data.net_count);
+        occupancyChart.update('none'); // Update smoothly without lag
+      }
+    }
+
+    // Server-Sent Events (SSE) for instant, push-based updates
+    let eventSource = null;
+
+    function initSSE() {
+      eventSource = new EventSource('/api/stream_events');
+
+      eventSource.onmessage = function (event) {
+        try {
+          const data = JSON.parse(event.data);
+          handleStateUpdate(data);
+        } catch (err) {
+          console.error('Error parsing SSE data:', err);
+        }
+      };
+
+      eventSource.onerror = function () {
+        console.warn('SSE disconnected, falling back to polling...');
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        // Fallback polling until reconnect
+        setTimeout(initSSE, 2000);
+      };
+    }
+
+    // High frequency backup polling (every 400ms) to ensure continuous synchronization
+    setInterval(async () => {
+      try {
+        const res = await fetch('/api/status');
+        if (res.ok) {
+          const data = await res.json();
+          handleStateUpdate(data);
+        }
+      } catch (e) {
+        // quiet ignore
+      }
+    }, 400);
+
+    // Controls
+    async function togglePause() {
+      const action = pauseText.textContent.toLowerCase() === 'pause' ? 'pause' : 'resume';
+      await fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action })
+      });
+    }
+
+    async function restartProcessing() {
+      if (confirm('Restart processing from frame 0? Counts will be reset.')) {
+        knownEventIds.clear();
+        eventsList.innerHTML = '';
+        if (emptyEventsMsg) {
+          emptyEventsMsg.style.display = 'flex';
+          eventsList.appendChild(emptyEventsMsg);
+        }
+        eventCountBadge.textContent = '0 events';
+        occupancyChart.data.labels = [];
+        occupancyChart.data.datasets.forEach(d => d.data = []);
+        occupancyChart.update();
+
+        await fetch('/api/control', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'reset' })
+        });
+
+        // Reload video feed element
+        const img = document.getElementById('stream-img');
+        img.src = '/video_feed?t=' + Date.now();
+      }
+    }
+
+    // Start SSE on page load
+    initSSE();
+  </script>
+</body>
+
+</html>
