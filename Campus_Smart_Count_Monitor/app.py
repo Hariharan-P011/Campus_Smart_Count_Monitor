@@ -16,12 +16,14 @@ MODEL_PATH = str(BASE_DIR / "yolo11n.pt")
 OUTPUT_DIR = BASE_DIR / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-# Counting line parameters
-LINE_START = (0.21, 0.26)
-LINE_END = (0.50, 0.085)
+from count_people import PersistentTracker, VirtualGateCounter, GATE_START, GATE_END, TRACKER_CFG
+
+# Calibrated doorway counting line parameters
+LINE_START = (round(GATE_START[0] / 1280.0, 3), round(GATE_START[1] / 720.0, 3))
+LINE_END = (round(GATE_END[0] / 1280.0, 3), round(GATE_END[1] / 720.0, 3))
 CONFIDENCE = 0.20
 IMAGE_SIZE = 640
-LINE_OFFSET = 10
+INITIAL_OCCUPANCY = 4
 
 class StateManager:
     def __init__(self):
@@ -127,16 +129,18 @@ class VideoWorker(threading.Thread):
         line_x2 = int(width * LINE_END[0])
         line_y2 = int(height * LINE_END[1])
 
-        line_len = max(1.0, ((line_x2 - line_x1) ** 2 + (line_y2 - line_y1) ** 2) ** 0.5)
+        gate = VirtualGateCounter(GATE_START, GATE_END)
+        tracker = PersistentTracker(max_reid_distance=85, max_missing_frames=450, min_iou=0.20)
 
         with state.lock:
             state.total_frames = total_frames
             state.is_running = True
             state.is_paused = False
             state.is_completed = False
+            state.in_count = 0
+            state.out_count = 0
+            state.net_count = INITIAL_OCCUPANCY
 
-        last_side = {}
-        last_counted_side = {}
         frame_idx = 0
         fps_start_time = time.time()
         fps_frames = 0
@@ -168,7 +172,7 @@ class VideoWorker(threading.Thread):
             result = model.track(
                 frame,
                 persist=True,
-                tracker="botsort.yaml",
+                tracker=TRACKER_CFG,
                 classes=[0],
                 conf=CONFIDENCE,
                 imgsz=IMAGE_SIZE,
@@ -179,65 +183,62 @@ class VideoWorker(threading.Thread):
             active_in_frame = 0
             new_crossing_event = None
 
-            # Draw the diagonal counting boundary
-            cv2.line(frame, (line_x1, line_y1), (line_x2, line_y2), (255, 180, 0), 3)
-            # Add line label
+            # Draw glowing doorway gate
+            cv2.line(frame, GATE_START, GATE_END, (0, 240, 255), 4)
+            cv2.circle(frame, GATE_START, 6, (0, 200, 255), -1)
+            cv2.circle(frame, GATE_END, 6, (0, 200, 255), -1)
             cv2.putText(
-                frame, "COUNTING GATE",
-                (line_x1 - 10, max(25, line_y1 - 10)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 180, 0), 2
+                frame, "GATE: ENTRANCE (IN/OUT)",
+                (GATE_START[0] - 30, max(20, GATE_START[1] - 12)),
+                cv2.FONT_HERSHEY_DUPLEX, 0.45, (0, 240, 255), 1
             )
 
+            raw_detections = []
             if result.boxes is not None and result.boxes.id is not None:
                 boxes = result.boxes.xyxy.cpu().numpy()
                 track_ids = result.boxes.id.int().cpu().tolist()
-                active_in_frame = len(track_ids)
+                confs = result.boxes.conf.cpu().tolist()
+                for b, rid, c in zip(boxes, track_ids, confs):
+                    raw_detections.append({'raw_id': rid, 'bbox': b, 'conf': c})
 
-                for box, track_id in zip(boxes, track_ids):
-                    bx1, by1, bx2, by2 = map(int, box)
-                    center_x = (bx1 + bx2) // 2
-                    center_y = by2
+            tracked_persons = tracker.update(raw_detections, frame_idx)
+            active_in_frame = len(tracked_persons)
 
-                    cross_val = (
-                        (line_x2 - line_x1) * (center_y - line_y1)
-                        - (line_y2 - line_y1) * (center_x - line_x1)
-                    )
+            for person in tracked_persons:
+                pid = person['id']
+                bx1, by1, bx2, by2 = map(int, person['bbox'])
+                feet = person['feet']
+                conf = person['conf']
 
-                    if abs(cross_val) > LINE_OFFSET * line_len:
-                        side = 1 if cross_val > 0 else -1
-                        prev_side = last_side.get(track_id)
+                crossing = gate.update(pid, feet, frame_idx)
+                if crossing == "IN":
+                    with state.lock:
+                        state.in_count += 1
+                        state.net_count = INITIAL_OCCUPANCY + state.in_count - state.out_count
+                        new_crossing_event = state.record_event(pid, "IN")
+                elif crossing == "OUT":
+                    with state.lock:
+                        state.out_count += 1
+                        state.net_count = max(0, INITIAL_OCCUPANCY + state.in_count - state.out_count)
+                        new_crossing_event = state.record_event(pid, "OUT")
 
-                        if (
-                            prev_side is not None
-                            and side != prev_side
-                            and last_counted_side.get(track_id) != side
-                        ):
-                            with state.lock:
-                                if prev_side == -1 and side == 1:
-                                    state.in_count += 1
-                                    state.net_count = state.in_count - state.out_count
-                                    last_counted_side[track_id] = side
-                                    new_crossing_event = state.record_event(track_id, "IN")
-                                elif prev_side == 1 and side == -1:
-                                    state.out_count += 1
-                                    state.net_count = state.in_count - state.out_count
-                                    last_counted_side[track_id] = side
-                                    new_crossing_event = state.record_event(track_id, "OUT")
+                # Trajectory trail
+                trail = tracker.trails.get(pid, [])
+                for i in range(1, len(trail)):
+                    cv2.line(frame, trail[i - 1], trail[i], (0, 255, 200), 2)
 
-                        last_side[track_id] = side
-
-                    # Draw stylish bounding box & ID
-                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), (40, 167, 69), 2)
-                    cv2.circle(frame, (center_x, center_y), 4, (235, 99, 37), -1)
-                    
-                    label = f"ID #{track_id}"
-                    (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                    cv2.rectangle(frame, (bx1, max(0, by1 - 20)), (bx1 + lw + 6, max(20, by1)), (40, 167, 69), -1)
-                    cv2.putText(
-                        frame, label,
-                        (bx1 + 3, max(15, by1 - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1
-                    )
+                # Stylish bounding box & ID
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (40, 167, 69), 2)
+                cv2.circle(frame, (int(feet[0]), int(feet[1])), 4, (235, 99, 37), -1)
+                
+                label = f"ID #{pid} ({conf:.2f})"
+                (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.48, 1)
+                cv2.rectangle(frame, (bx1, max(0, by1 - 20)), (bx1 + lw + 6, max(20, by1)), (40, 167, 69), -1)
+                cv2.putText(
+                    frame, label,
+                    (bx1 + 3, max(15, by1 - 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.48, (255, 255, 255), 1
+                )
 
             # Update state counts and frame
             with state.lock:

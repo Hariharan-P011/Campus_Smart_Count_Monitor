@@ -1,1 +1,3 @@
-frame,track_id,direction,in_count,out_count
+frame,time_seconds,track_id,direction,in_count,out_count,people_in_building
+1184,39.47,6,IN,1,0,5
+3363,112.1,18,OUT,1,1,4
