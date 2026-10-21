@@ -22,9 +22,9 @@ CONFIDENCE = 0.20
 IMAGE_SIZE = 640
 
 # Calibrated Virtual Doorway Gate (Pixel coordinates for 1280x720)
-# Entrance doorway threshold to outside:
-GATE_START = (440, 115)
-GATE_END   = (590, 115)
+# Full entrance width sealed to pillar (zero gap left):
+GATE_START = (220, 170)
+GATE_END   = (730, 115)
 
 # Hysteresis buffer in pixels to avoid boundary jitter
 DEAD_BAND = 5.0
@@ -359,14 +359,14 @@ def main():
             # Update Persistent Tracker to eliminate ID fragmentation
             tracked_persons = tracker.update(raw_detections, frame_idx)
 
-            # Draw virtual gate doorway line with glowing effect
-            cv2.line(frame, GATE_START, GATE_END, (0, 240, 255), 4)
-            cv2.circle(frame, GATE_START, 6, (0, 200, 255), -1)
-            cv2.circle(frame, GATE_END, 6, (0, 200, 255), -1)
+            # Draw complete entrance gate in vibrant red matching user specification
+            cv2.line(frame, GATE_START, GATE_END, (30, 40, 240), 4)
+            cv2.circle(frame, GATE_START, 6, (30, 40, 240), -1)
+            cv2.circle(frame, GATE_END, 6, (30, 40, 240), -1)
             cv2.putText(
-                frame, "VIRTUAL GATE (DOORWAY)",
-                (GATE_START[0] - 25, GATE_START[1] - 12),
-                cv2.FONT_HERSHEY_DUPLEX, 0.48, (0, 240, 255), 1
+                frame, "ENTRANCE GATE (IN/OUT)",
+                (GATE_START[0], max(20, GATE_START[1] - 12)),
+                cv2.FONT_HERSHEY_DUPLEX, 0.52, (30, 40, 240), 1
             )
 
             # Process each tracked person
