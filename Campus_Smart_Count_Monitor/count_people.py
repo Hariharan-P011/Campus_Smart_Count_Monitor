@@ -22,9 +22,9 @@ CONFIDENCE = 0.20
 IMAGE_SIZE = 640
 
 # Calibrated Virtual Doorway Gate (Pixel coordinates for 1280x720)
-# Full entrance width sealed to pillar (zero gap left):
-GATE_START = (220, 170)
-GATE_END   = (730, 115)
+# Covers full entrance width including walkway gap to the right of the pillar (violet area):
+GATE_START = (175, 150)
+GATE_END   = (870, 75)
 
 # Hysteresis buffer in pixels to avoid boundary jitter
 DEAD_BAND = 5.0
@@ -110,8 +110,18 @@ class PersistentTracker:
                     continue
                 dist = math.hypot(feet[0] - info['feet'][0], feet[1] - info['feet'][1])
                 iou = self.compute_iou(bbox, info['bbox'])
+                # Standard spatial proximity / IoU match
+                is_match = (iou >= self.min_iou or dist <= self.max_reid_distance)
 
-                if (iou >= self.min_iou or dist <= self.max_reid_distance) and dist < best_dist:
+                # Pillar occlusion transit:
+                # Track lost entering behind pillar (520 <= x <= 680, y <= 130)
+                # and appearing beyond pillar (720 <= x <= 920, 110 <= y <= 210) within 120 frames
+                if not is_match and (frame_idx - info['last_seen'] <= 120):
+                    if (520 <= info['feet'][0] <= 680 and info['feet'][1] <= 130) and \
+                       (720 <= feet[0] <= 920 and feet[1] <= 210):
+                        is_match = True
+
+                if is_match and dist < best_dist:
                     best_dist = dist
                     best_pid = pid
 
@@ -170,13 +180,14 @@ class VirtualGateCounter:
     Monitors crossing across the virtual doorway gate line.
     Classifies movement as IN (Outside -> Inside) or OUT (Inside -> Outside).
     """
-    def __init__(self, p1, p2, dead_band=DEAD_BAND):
+    def __init__(self, p1=GATE_START, p2=GATE_END, dead_band=DEAD_BAND, min_entrance_x=460):
         self.p1 = p1
         self.p2 = p2
         self.dx = p2[0] - p1[0]
         self.dy = p2[1] - p1[1]
         self.line_len = max(1.0, math.hypot(self.dx, self.dy))
         self.dead_band = dead_band
+        self.min_entrance_x = min_entrance_x
         self.last_side = {}       # pid -> -1 (outside) or +1 (inside)
         self.cooldown = {}        # pid -> frame of last crossing
 
@@ -188,6 +199,10 @@ class VirtualGateCounter:
             None if outside segment span or in dead-band.
         """
         px, py = point
+        # Filter out inside dining tables (only doorway & walkway corridor x >= 460)
+        if px < self.min_entrance_x:
+            return None
+
         # Projection along line segment
         t = ((px - self.p1[0]) * self.dx + (py - self.p1[1]) * self.dy) / (self.line_len ** 2)
         # Margin around gate segment
@@ -359,14 +374,14 @@ def main():
             # Update Persistent Tracker to eliminate ID fragmentation
             tracked_persons = tracker.update(raw_detections, frame_idx)
 
-            # Draw complete entrance gate in vibrant red matching user specification
-            cv2.line(frame, GATE_START, GATE_END, (30, 40, 240), 4)
-            cv2.circle(frame, GATE_START, 6, (30, 40, 240), -1)
-            cv2.circle(frame, GATE_END, 6, (30, 40, 240), -1)
+            # Draw complete entrance gate in vibrant blue matching user specification
+            cv2.line(frame, GATE_START, GATE_END, (255, 80, 0), 4)
+            cv2.circle(frame, GATE_START, 6, (255, 80, 0), -1)
+            cv2.circle(frame, GATE_END, 6, (255, 80, 0), -1)
             cv2.putText(
-                frame, "ENTRANCE GATE (IN/OUT)",
+                frame, "VIRTUAL GATE (IN/OUT)",
                 (GATE_START[0], max(20, GATE_START[1] - 12)),
-                cv2.FONT_HERSHEY_DUPLEX, 0.52, (30, 40, 240), 1
+                cv2.FONT_HERSHEY_DUPLEX, 0.52, (255, 80, 0), 1
             )
 
             # Process each tracked person

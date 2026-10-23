@@ -183,14 +183,14 @@ class VideoWorker(threading.Thread):
             active_in_frame = 0
             new_crossing_event = None
 
-            # Draw complete entrance gate in vibrant red matching user specification
-            cv2.line(frame, GATE_START, GATE_END, (30, 40, 240), 4)
-            cv2.circle(frame, GATE_START, 6, (30, 40, 240), -1)
-            cv2.circle(frame, GATE_END, 6, (30, 40, 240), -1)
+            # Draw complete entrance gate in vibrant blue matching user specification
+            cv2.line(frame, GATE_START, GATE_END, (255, 80, 0), 4)
+            cv2.circle(frame, GATE_START, 6, (255, 80, 0), -1)
+            cv2.circle(frame, GATE_END, 6, (255, 80, 0), -1)
             cv2.putText(
-                frame, "ENTRANCE GATE (IN/OUT)",
+                frame, "VIRTUAL GATE (IN/OUT)",
                 (GATE_START[0], max(20, GATE_START[1] - 12)),
-                cv2.FONT_HERSHEY_DUPLEX, 0.52, (30, 40, 240), 1
+                cv2.FONT_HERSHEY_DUPLEX, 0.52, (255, 80, 0), 1
             )
 
             raw_detections = []
